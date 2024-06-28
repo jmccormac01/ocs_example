@@ -1,3 +1,15 @@
+# Modifications to create working example for W1m
+#
+# Comment out all archive related stuff
+# Remove all commands adding test data to dbs etc
+# Configdb healthcheck command localhost -> 127.0.0.1
+# Add postgres-data persistent volume to db service
+# On first run:
+#    Tweak the initial superuser to be ops
+#    Keep the create_application commands for configdb and downtimedb (not archive)
+# On subsequent runs:
+#    Comment out the superuser creation and create_application commands
+
 version: "3.7"
 
 services:
@@ -9,6 +21,7 @@ services:
             - POSTGRES_PASSWORD=postgrespass
         volumes:
             - ./docker-postgresql-multiple-databases:/docker-entrypoint-initdb.d
+            - ./postgres-data:/var/lib/postgresql/data
         mem_limit: "2048m"
         healthcheck:
             test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -36,14 +49,14 @@ services:
         mem_limit: "512m"
         restart: always
         healthcheck:
-            test: ["CMD-SHELL", "wget localhost:7000/genericmodes/ -q -O - > /dev/null 2>&1"]
+            test: ["CMD-SHELL", "wget 127.0.0.1:7000/genericmodes/ -q -O - > /dev/null 2>&1"]
             interval: 10s
             timeout: 5s
             retries: 5
         command: >
             bash -c "python manage.py migrate 
-            && python manage.py init_e2e_data -s ogg --latitude 20.707 --longitude -156.258 --instrument-state=SCHEDULABLE
             && python manage.py runserver 0.0.0.0:7000"
+            # between migrate and runserver -> && python manage.py init_e2e_data -s ogg --latitude 20.707 --longitude -156.258 --instrument-state=SCHEDULABLE
         depends_on:
             db:
                 condition: service_healthy
@@ -69,9 +82,9 @@ services:
         restart: always
         command: >
             sh -c "python manage.py migrate
-            && python manage.py create_downtime -s ogg -e doma -t 1m0a -r Weather --offset-hours=24 --duration-hours=24
-            && python manage.py create_downtime -s ogg -e clma -t 2m0a -r Maintenance --offset-hours=-48 --duration-hours=24
             && python manage.py runserver 0.0.0.0:7500"
+            # between migrate and run server -> && python manage.py create_downtime -s ogg -e doma -t 1m0a -r Weather --offset-hours=24 --duration-hours=24
+            # && python manage.py create_downtime -s ogg -e clma -t 2m0a -r Maintenance --offset-hours=-48 --duration-hours=24
         depends_on:
             db:
                 condition: service_healthy
@@ -103,15 +116,16 @@ services:
         restart: always
         command: >
             sh -c "python manage.py migrate 
-            && python manage.py create_user -u test_user -p test_pass --superuser --token=sutoken1234abcd
-            && python manage.py create_application -u test_user -n ConfigDB --client-id configdb_application_client_id --client-secret configdb_application_client_secret --redirect-uris http://localhost:7000
-            && python manage.py create_application -u test_user -n Downtime --client-id downtime_application_client_id --client-secret downtime_application_client_secret --redirect-uris http://localhost:7500/
-            && python manage.py create_application -u test_user -n Archive --client-id science_archive_application_client_id --client-secret science_archive_application_client_secret --redirect-uris http://localhost:9500/
-            && python manage.py create_semester --id TestSemester
-            && python manage.py create_proposal --id TestProposal --active --direct --pi test_user --time-allocation
-            && python manage.py create_example_requests -p TestProposal -s test_user
             && python manage.py collectstatic --no-input
             && python manage.py runserver 0.0.0.0:8000"
+            # between create user and collectstatic ->
+            # && python manage.py create_user -u ops -p fortUNA92 --superuser --token=sutoken1234ops
+            # && python manage.py create_application -u ops -n ConfigDB --client-id configdb_application_client_id --client-secret configdb_application_client_secret --redirect-uris http://localhost:7000
+            # && python manage.py create_application -u ops -n Downtime --client-id downtime_application_client_id --client-secret downtime_application_client_secret --redirect-uris http://localhost:7500/
+            # && python manage.py create_application -u ops -n Archive --client-id science_archive_application_client_id --client-secret science_archive_application_client_secret --redirect-uris http://localhost:9500/
+            # && python manage.py create_semester --id TestSemester
+            # && python manage.py create_proposal --id TestProposal --active --direct --pi ops --time-allocation
+            # && python manage.py create_example_requests -p TestProposal -s ops
         depends_on:
             db:
                 condition: service_healthy
@@ -234,227 +248,227 @@ services:
     # In order to use versioning, minio requires a distributed erasure code setup.
     # Distributed minio setups require at least four servers.
     # For details, see: https://docs.min.io/docs/minio-erasure-code-quickstart-guide.html
-    minio1:
-        image: minio/minio:RELEASE.2021-06-17T00-10-46Z
-        volumes:
-            - ./data/data1-1:/data1
-            - ./data/data1-2:/data2
-        expose:
-            - "9000"
-        environment:
-            MINIO_ROOT_USER: minio_access_key
-            MINIO_ROOT_PASSWORD: minio_secret
-            MINIO_REGION_NAME: minio-region
-            MINIO_DOMAIN: localhost
-        command: server http://minio{1...4}/data{1...2}
-        healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-            interval: 30s
-            timeout: 20s
-            retries: 3
-        networks:
-          default:
-            aliases:
-              -  ocs-example-bucket.localhost
-    minio2:
-        image: minio/minio:RELEASE.2021-06-17T00-10-46Z
-        volumes:
-            - ./data/data2-1:/data1
-            - ./data/data2-2:/data2
-        expose:
-            - "9000"
-        environment:
-            MINIO_ROOT_USER: minio_access_key
-            MINIO_ROOT_PASSWORD: minio_secret
-            MINIO_REGION_NAME: minio-region
-            MINIO_DOMAIN: localhost
-        command: server http://minio{1...4}/data{1...2}
-        healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-            interval: 30s
-            timeout: 20s
-            retries: 3
-        networks:
-          default:
-            aliases:
-              -  ocs-example-bucket.localhost
-    minio3:
-        image: minio/minio:RELEASE.2021-06-17T00-10-46Z
-        volumes:
-            - ./data/data3-1:/data1
-            - ./data/data3-2:/data2
-        expose:
-            - "9000"
-        environment:
-            MINIO_ROOT_USER: minio_access_key
-            MINIO_ROOT_PASSWORD: minio_secret
-            MINIO_REGION_NAME: minio-region
-            MINIO_DOMAIN: localhost
-        command: server http://minio{1...4}/data{1...2}
-        healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-            interval: 30s
-            timeout: 20s
-            retries: 3
-        networks:
-          default:
-            aliases:
-              -  ocs-example-bucket.localhost
-    minio4:
-        image: minio/minio:RELEASE.2021-06-17T00-10-46Z
-        volumes:
-            - ./data/data4-1:/data1
-            - ./data/data4-2:/data2
-        expose:
-            - "9000"
-        environment:
-            MINIO_ROOT_USER: minio_access_key
-            MINIO_ROOT_PASSWORD: minio_secret
-            MINIO_REGION_NAME: minio-region
-            MINIO_DOMAIN: localhost
-        command: server http://minio{1...4}/data{1...2}
-        healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-            interval: 30s
-            timeout: 20s
-            retries: 3
-        networks:
-          default:
-            aliases:
-              -  ocs-example-bucket.localhost
-
-    nginx:
-        image: observatorycontrolsystem/nginx-mod-zip:1.15.12
-        volumes:
-        - ./nginx.conf:/etc/nginx/nginx.conf:ro
-        network_mode: "service:science_archive"
-        depends_on:
-        - minio1
-        - minio2
-        - minio3
-        - minio4
-
-    science_archive:
-        image: ghcr.io/observatorycontrolsystem/science-archive:2.4.0
-        container_name: sciencearchive
-        links:
-            -  redis:rediscache
-        ports:
-            - "9000:9000"  # minio
-            - "9500:9500"  # archive api
-        expose:
-            - "9501"
-        environment:
-            - DEBUG=True  # must be true to load static files
-            - DB_HOST=db
-            - DB_HOST_READER=db
-            - DB_NAME=sciencearchive
-            - DB_USER=postgres
-            - DB_PASS=postgrespass
-            - SECRET_KEY=ocs_example_science_archive_secret_key
-            - FILESTORE_TYPE=s3
-            - AWS_ACCESS_KEY_ID=minio_access_key
-            - AWS_SECRET_ACCESS_KEY=minio_secret
-            - AWS_DEFAULT_REGION=minio-region
-            - AWS_BUCKET=ocs-example-bucket
-            - BUCKET=ocs-example-bucket
-            - S3_ENDPOINT_URL=http://localhost:9000/
-            - S3_ADDRESSING_STYLE=virtual
-            - OAUTH_CLIENT_ID=science_archive_application_client_id
-            - OAUTH_CLIENT_SECRET=science_archive_application_client_secret
-            - OAUTH_TOKEN_URL=http://observation-portal:8000/o/token/
-            - OAUTH_PROFILE_URL=http://observation-portal:8000/api/profile/
-            - OAUTH_SERVER_KEY=mysecretserverkey12345
-            - CONFIGDB_URL=http://configdb:7000/
-            - NAVBAR_TITLE_URL=http://localhost:9500/
-            - PROCESSED_EXCHANGE_ENABLED=False
-            - CACHE_BACKEND=django_redis.cache.RedisCache
-            - CACHE_LOC=redis://rediscache:6379/3
-            # Additional variables for the ingester:
-            - API_ROOT=http://localhost:9500/
-            - OBSERVATION_PORTAL_BASE_URL=http://observation-portal:8000/api
-            - OPENTSDB_PYTHON_METRICS_TEST_MODE=True
-        mem_limit: "512m"
-        restart: always
-        volumes: 
-            - ./example_data:/example_data
-            - ./scripts/science_archive:/scripts
-        healthcheck:
-            test: ["CMD-SHELL", "wget localhost:9500/ -q -O - > /dev/null 2>&1"]
-            interval: 10s
-            timeout: 5s
-            retries: 5
-        command: >
-            sh -c "python manage.py migrate ;
-            python manage.py collectstatic --no-input ;
-            python manage.py runserver 0.0.0.0:9501 &
-            pip install requests ocs_ingester;
-            sleep 15 ;
-            python /scripts/initialize_bucket.py ;
-            python /scripts/ingest_sample_data.py ;
-            python manage.py cacheaggregates ;
-            wait %1"
-        depends_on:
-        - observation-portal
-        - minio1
-        - minio2
-        - minio3
-        - minio4
-
-    science_archive_client:
-        image: ghcr.io/observatorycontrolsystem/science-archive-client:1.1.1
-        ports:
-         - "9600:8080"
-        restart: always
-        environment:
-         - VUE_APP_OBSERVATION_PORTAL_API_URL=http://127.0.0.1:8000/api
-         - VUE_APP_ARCHIVE_API_URL=http://127.0.0.1:9500
-         - VUE_APP_SIMBAD_SERVICE_URL=http://127.0.0.1:9800
-         - VUE_APP_THUMBNAIL_SERVICE_URL=http://127.0.0.1:9700
-         - VUE_APP_DOCUMENTATION_URL=https://lco.global/documentation/archive-documentation/
-         - VUE_APP_GITHUB_API_URL=https://github.com/observatorycontrolsystem/science-archive
-         - "VUE_APP_REDUCTION_LEVEL_OPTIONS={\"0\": \"Raw\", \"91\": \"Processed\"}"
-        depends_on:
-         - science_archive
-
-    thumbnail_service:
-        image: ghcr.io/observatorycontrolsystem/thumbnail-service:3.0.2
-        container_name: thumbnailservice
-        ports:
-         - 9700:8080
-        environment:
-         - ARCHIVE_API_URL=http://sciencearchive:9500/
-         - STORAGE_URL=http://localhost:9000/
-         - AWS_ACCESS_KEY_ID=minio_access_key
-         - AWS_SECRET_ACCESS_KEY=minio_secret
-         - AWS_DEFAULT_REGION=minio-region
-         - AWS_BUCKET=ocs-example-bucket
-         - TMP_DIR=/thumbnails/
-        restart: always
-        volumes: 
-            - ./data/thumbnails:/thumbnails
-        command: >
-            sh -c "gunicorn
-            --config=thumbservice/config.py
-            --bind=0.0.0.0:8080
-            --worker-class=gevent
-            --access-logfile=-
-            --error-logfile=-
-            thumbservice.thumbservice:app"
-        depends_on:
-         - science_archive
-
-    simbad2k:
-        image: ghcr.io/observatorycontrolsystem/simbad2k:1.2.0
-        container_name: simbad2k
-        ports:
-         - 9800:5000
-        environment:
-         - XDG_CACHE_HOME=/tmp/astropy-cache
-         - XDG_CONFIG_HOME=/tmp/astropy-config
-        depends_on:
-         - science_archive
-
+    #minio1:
+    #    image: minio/minio:RELEASE.2021-06-17T00-10-46Z
+    #    volumes:
+    #        - ./data/data1-1:/data1
+    #        - ./data/data1-2:/data2
+    #    expose:
+    #        - "9000"
+    #    environment:
+    #        MINIO_ROOT_USER: minio_access_key
+    #        MINIO_ROOT_PASSWORD: minio_secret
+    #        MINIO_REGION_NAME: minio-region
+    #        MINIO_DOMAIN: localhost
+    #    command: server http://minio{1...4}/data{1...2}
+    #    healthcheck:
+    #        test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    #        interval: 30s
+    #        timeout: 20s
+    #        retries: 3
+    #    networks:
+    #      default:
+    #        aliases:
+    #          -  ocs-example-bucket.localhost
+    #minio2:
+    #    image: minio/minio:RELEASE.2021-06-17T00-10-46Z
+    #    volumes:
+    #        - ./data/data2-1:/data1
+    #        - ./data/data2-2:/data2
+    #    expose:
+    #        - "9000"
+    #    environment:
+    #        MINIO_ROOT_USER: minio_access_key
+    #        MINIO_ROOT_PASSWORD: minio_secret
+    #        MINIO_REGION_NAME: minio-region
+    #        MINIO_DOMAIN: localhost
+    #    command: server http://minio{1...4}/data{1...2}
+    #    healthcheck:
+    #        test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    #        interval: 30s
+    #        timeout: 20s
+    #        retries: 3
+    #    networks:
+    #      default:
+    #        aliases:
+    #          -  ocs-example-bucket.localhost
+    #minio3:
+    #    image: minio/minio:RELEASE.2021-06-17T00-10-46Z
+    #    volumes:
+    #        - ./data/data3-1:/data1
+    #        - ./data/data3-2:/data2
+    #    expose:
+    #        - "9000"
+    #    environment:
+    #        MINIO_ROOT_USER: minio_access_key
+    #        MINIO_ROOT_PASSWORD: minio_secret
+    #        MINIO_REGION_NAME: minio-region
+    #        MINIO_DOMAIN: localhost
+    #    command: server http://minio{1...4}/data{1...2}
+    #    healthcheck:
+    #        test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    #        interval: 30s
+    #        timeout: 20s
+    #        retries: 3
+    #    networks:
+    #      default:
+    #        aliases:
+    #          -  ocs-example-bucket.localhost
+    #minio4:
+    #    image: minio/minio:RELEASE.2021-06-17T00-10-46Z
+    #    volumes:
+    #        - ./data/data4-1:/data1
+    #        - ./data/data4-2:/data2
+    #    expose:
+    #        - "9000"
+    #    environment:
+    #        MINIO_ROOT_USER: minio_access_key
+    #        MINIO_ROOT_PASSWORD: minio_secret
+    #        MINIO_REGION_NAME: minio-region
+    #        MINIO_DOMAIN: localhost
+    #    command: server http://minio{1...4}/data{1...2}
+    #    healthcheck:
+    #        test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    #        interval: 30s
+    #        timeout: 20s
+    #        retries: 3
+    #    networks:
+    #      default:
+    #        aliases:
+    #          -  ocs-example-bucket.localhost
+    #
+    #nginx:
+    #    image: observatorycontrolsystem/nginx-mod-zip:1.15.12
+    #    volumes:
+    #    - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    #    network_mode: "service:science_archive"
+    #    depends_on:
+    #    - minio1
+    #    - minio2
+    #    - minio3
+    #    - minio4
+    #
+    #science_archive:
+    #    image: ghcr.io/observatorycontrolsystem/science-archive:2.4.0
+    #    container_name: sciencearchive
+    #    links:
+    #        -  redis:rediscache
+    #    ports:
+    #        - "9000:9000"  # minio
+    #        - "9500:9500"  # archive api
+    #    expose:
+    #        - "9501"
+    #    environment:
+    #        - DEBUG=True  # must be true to load static files
+    #        - DB_HOST=db
+    #        - DB_HOST_READER=db
+    #        - DB_NAME=sciencearchive
+    #        - DB_USER=postgres
+    #        - DB_PASS=postgrespass
+    #        - SECRET_KEY=ocs_example_science_archive_secret_key
+    #        - FILESTORE_TYPE=s3
+    #        - AWS_ACCESS_KEY_ID=minio_access_key
+    #        - AWS_SECRET_ACCESS_KEY=minio_secret
+    #        - AWS_DEFAULT_REGION=minio-region
+    #        - AWS_BUCKET=ocs-example-bucket
+    #        - BUCKET=ocs-example-bucket
+    #        - S3_ENDPOINT_URL=http://localhost:9000/
+    #        - S3_ADDRESSING_STYLE=virtual
+    #        - OAUTH_CLIENT_ID=science_archive_application_client_id
+    #        - OAUTH_CLIENT_SECRET=science_archive_application_client_secret
+    #        - OAUTH_TOKEN_URL=http://observation-portal:8000/o/token/
+    #        - OAUTH_PROFILE_URL=http://observation-portal:8000/api/profile/
+    #        - OAUTH_SERVER_KEY=mysecretserverkey12345
+    #        - CONFIGDB_URL=http://configdb:7000/
+    #        - NAVBAR_TITLE_URL=http://localhost:9500/
+    #        - PROCESSED_EXCHANGE_ENABLED=False
+    #        - CACHE_BACKEND=django_redis.cache.RedisCache
+    #        - CACHE_LOC=redis://rediscache:6379/3
+    #        # Additional variables for the ingester:
+    #        - API_ROOT=http://localhost:9500/
+    #        - OBSERVATION_PORTAL_BASE_URL=http://observation-portal:8000/api
+    #        - OPENTSDB_PYTHON_METRICS_TEST_MODE=True
+    #    mem_limit: "512m"
+    #    restart: always
+    #    volumes: 
+    #        - ./example_data:/example_data
+    #        - ./scripts/science_archive:/scripts
+    #    healthcheck:
+    #        test: ["CMD-SHELL", "wget localhost:9500/ -q -O - > /dev/null 2>&1"]
+    #        interval: 10s
+    #        timeout: 5s
+    #        retries: 5
+    #    command: >
+    #        sh -c "python manage.py migrate ;
+    #        python manage.py collectstatic --no-input ;
+    #        python manage.py runserver 0.0.0.0:9501 &
+    #        pip install requests ocs_ingester;
+    #        sleep 15 ;
+    #        python /scripts/initialize_bucket.py ;
+    #        python /scripts/ingest_sample_data.py ;
+    #        python manage.py cacheaggregates ;
+    #        wait %1"
+    #    depends_on:
+    #    - observation-portal
+    #    - minio1
+    #    - minio2
+    #    - minio3
+    #    - minio4
+    #
+    #science_archive_client:
+    #    image: ghcr.io/observatorycontrolsystem/science-archive-client:1.1.1
+    #    ports:
+    #     - "9600:8080"
+    #    restart: always
+    #    environment:
+    #     - VUE_APP_OBSERVATION_PORTAL_API_URL=http://127.0.0.1:8000/api
+    #     - VUE_APP_ARCHIVE_API_URL=http://127.0.0.1:9500
+    #     - VUE_APP_SIMBAD_SERVICE_URL=http://127.0.0.1:9800
+    #     - VUE_APP_THUMBNAIL_SERVICE_URL=http://127.0.0.1:9700
+    #     - VUE_APP_DOCUMENTATION_URL=https://lco.global/documentation/archive-documentation/
+    #     - VUE_APP_GITHUB_API_URL=https://github.com/observatorycontrolsystem/science-archive
+    #     - "VUE_APP_REDUCTION_LEVEL_OPTIONS={\"0\": \"Raw\", \"91\": \"Processed\"}"
+    #    depends_on:
+    #     - science_archive
+    #
+    #thumbnail_service:
+    #    image: ghcr.io/observatorycontrolsystem/thumbnail-service:3.0.2
+    #    container_name: thumbnailservice
+    #    ports:
+    #     - 9700:8080
+    #    environment:
+    #     - ARCHIVE_API_URL=http://sciencearchive:9500/
+    #     - STORAGE_URL=http://localhost:9000/
+    #     - AWS_ACCESS_KEY_ID=minio_access_key
+    #     - AWS_SECRET_ACCESS_KEY=minio_secret
+    #     - AWS_DEFAULT_REGION=minio-region
+    #     - AWS_BUCKET=ocs-example-bucket
+    #     - TMP_DIR=/thumbnails/
+    #    restart: always
+    #    volumes: 
+    #        - ./data/thumbnails:/thumbnails
+    #    command: >
+    #        sh -c "gunicorn
+    #        --config=thumbservice/config.py
+    #        --bind=0.0.0.0:8080
+    #        --worker-class=gevent
+    #        --access-logfile=-
+    #        --error-logfile=-
+    #        thumbservice.thumbservice:app"
+    #    depends_on:
+    #     - science_archive
+    #
+    #simbad2k:
+    #    image: ghcr.io/observatorycontrolsystem/simbad2k:1.2.0
+    #    container_name: simbad2k
+    #    ports:
+    #     - 9800:5000
+    #    environment:
+    #     - XDG_CACHE_HOME=/tmp/astropy-cache
+    #     - XDG_CONFIG_HOME=/tmp/astropy-config
+    #    depends_on:
+    #     - science_archive
+    #
     redis:
         image: redis:6.2.6
         command: ["redis-server", "--appendonly", "yes"]
@@ -468,4 +482,3 @@ services:
             interval: 10s
             timeout: 5s
             retries: 30
-
